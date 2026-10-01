@@ -1,7 +1,7 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
-from datetime import datetime
+from datetime import datetime, timezone
 import secrets
 
 app = FastAPI()
@@ -103,13 +103,7 @@ def home():
     return HTML
 
 @app.post("/capsules")
-def create_capsule(content: str = None, unlock_at: str = None):
-    from fastapi import Request
-    # Manual JSON parsing to avoid Pydantic issues
-    return {"error": "use body"}
-
-@app.api_route("/capsules", methods=["POST"])
-async def create_capsule_post(request):
+async def create_capsule(request: Request):
     body = await request.json()
     content = body.get("content")
     unlock_at = body.get("unlock_at")
@@ -118,7 +112,7 @@ async def create_capsule_post(request):
         raise HTTPException(400, "Missing fields")
     
     unlock = datetime.fromisoformat(unlock_at.replace("Z", "+00:00"))
-    if unlock <= datetime.now(unlock.tzinfo):
+    if unlock <= datetime.now(timezone.utc):
         raise HTTPException(400, "Date must be in the future")
     
     id = secrets.token_urlsafe(8)
@@ -128,10 +122,10 @@ async def create_capsule_post(request):
 @app.get("/capsules/{id}")
 def get_capsule(id: str):
     if id not in capsules:
-        raise HTTPException(404)
+        raise HTTPException(404, "Not found")
     cap = capsules[id]
     unlock = datetime.fromisoformat(cap["unlock_at"].replace("Z", "+00:00"))
-    now = datetime.now(unlock.tzinfo)
+    now = datetime.now(timezone.utc)
     if now < unlock:
         d = unlock - now
         raise HTTPException(403, f"🔒 {d.days}d {d.seconds//3600}h remaining")
