@@ -1,23 +1,16 @@
-"""Time Capsule API"""
+"""Time Capsule API - in-memory for serverless demo"""
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from datetime import datetime
-import sqlite3, secrets, os
+import secrets
 
 app = FastAPI(title="Time Capsule API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-DB = "/tmp/capsules.db"
-
-def init_db():
-    conn = sqlite3.connect(DB)
-    conn.execute("CREATE TABLE IF NOT EXISTS capsules (id TEXT PRIMARY KEY, content TEXT, unlock_at TEXT)")
-    conn.commit()
-    conn.close()
-
-init_db()
+# ponytail: in-memory storage resets on cold start, use real DB for production
+capsules = {}
 
 class Capsule(BaseModel):
     content: str
@@ -45,7 +38,7 @@ HTML = '''<!DOCTYPE html>
     textarea:focus,input:focus{outline:none;border-color:var(--accent)}
     button{width:100%;padding:14px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;transition:transform .2s}
     button:hover{transform:translateY(-2px)}
-    button:disabled{opacity:0.5;cursor:not-allowed}
+    button:disabled{opacity:0.5}
     .result{background:rgba(230,57,70,.1);border:1px solid rgba(230,57,70,.3);border-radius:10px;padding:16px;font-size:13px;word-break:break-all;margin-top:16px}
     .msg{padding:16px;border-radius:10px;font-size:14px;margin-top:16px}
     .msg.locked{background:rgba(230,57,70,.1);color:var(--accent)}
@@ -93,7 +86,7 @@ HTML = '''<!DOCTYPE html>
       const result = document.getElementById('create-result');
       
       if (!content || !unlock) {
-        result.innerHTML = '<div class="msg error">⚠️ Fill message and date</div>';
+        result.innerHTML = '<div class="msg error">Fill message and date</div>';
         return;
       }
       
@@ -110,13 +103,13 @@ HTML = '''<!DOCTYPE html>
         const data = await res.json();
         
         if (res.ok) {
-          result.innerHTML = '<div class="result">✅ Capsule Created!<br><br><b>ID:</b> ' + data.id + '<br><b>Unlocks:</b> ' + formatDate(data.unlocks_at) + '</div>';
+          result.innerHTML = '<div class="result">✅ Created!<br><b>ID:</b> ' + data.id + '<br><b>Unlocks:</b> ' + formatDate(data.unlocks_at) + '</div>';
           document.getElementById('content').value = '';
         } else {
-          result.innerHTML = '<div class="msg error">❌ ' + (data.detail || 'Error') + '</div>';
+          result.innerHTML = '<div class="msg error">' + (data.detail || 'Error') + '</div>';
         }
       } catch(e) {
-        result.innerHTML = '<div class="msg error">❌ Error: ' + e.message + '</div>';
+        result.innerHTML = '<div class="msg error">Error: ' + e.message + '</div>';
       }
       
       btn.disabled = false;
@@ -127,7 +120,7 @@ HTML = '''<!DOCTYPE html>
       const id = document.getElementById('capsule-id').value.trim();
       const result = document.getElementById('open-result');
       if (!id) {
-        result.innerHTML = '<div class="msg error">⚠️ Enter capsule ID</div>';
+        result.innerHTML = '<div class="msg error">Enter capsule ID</div>';
         return;
       }
       
@@ -138,12 +131,12 @@ HTML = '''<!DOCTYPE html>
         if (res.status === 403) {
           result.innerHTML = '<div class="msg locked">' + data.detail + '</div>';
         } else if (res.ok) {
-          result.innerHTML = '<div class="msg unlocked">🎉 <b>Message:</b><br><br>' + data.content + '</div>';
+          result.innerHTML = '<div class="msg unlocked">🎉 ' + data.content + '</div>';
         } else {
-          result.innerHTML = '<div class="msg error">❌ Capsule not found</div>';
+          result.innerHTML = '<div class="msg error">Not found</div>';
         }
       } catch(e) {
-        result.innerHTML = '<div class="msg error">❌ Network error</div>';
+        result.innerHTML = '<div class="msg error">Network error</div>';
       }
     }
     
@@ -161,34 +154,27 @@ def home():
 
 @app.post("/capsules")
 def create_capsule(c: Capsule):
-    init_db()
     if c.unlock_at <= datetime.utcnow():
         raise HTTPException(400, "Date must be in the future")
     id = secrets.token_urlsafe(8)
-    conn = sqlite3.connect(DB)
-    conn.execute("INSERT INTO capsules VALUES (?,?,?)", (id, c.content, c.unlock_at.isoformat()))
-    conn.commit()
-    conn.close()
+    capsules[id] = {"content": c.content, "unlock_at": c.unlock_at.isoformat()}
     return {"id": id, "unlocks_at": c.unlock_at}
 
 @app.get("/capsules/{id}")
 def get_capsule(id: str):
-    init_db()
-    conn = sqlite3.connect(DB)
-    row = conn.execute("SELECT content, unlock_at FROM capsules WHERE id=?", (id,)).fetchone()
-    conn.close()
-    if not row: raise HTTPException(404)
-    unlock = datetime.fromisoformat(row[1])
+    if id not in capsules:
+        raise HTTPException(404, "Capsule not found")
+    cap = capsules[id]
+    unlock = datetime.fromisoformat(cap["unlock_at"])
     if datetime.utcnow() < unlock:
         d = unlock - datetime.utcnow()
         raise HTTPException(403, f"🔒 {d.days}d {d.seconds//3600}h {(d.seconds%3600)//60}m remaining")
-    return {"content": row[0]}
+    return {"content": cap["content"]}
 
 @app.get("/capsules/{id}/status")
 def capsule_status(id: str):
-    init_db()
-    conn = sqlite3.connect(DB)
-    row = conn.execute("SELECT unlock_at FROM capsules WHERE id=?", (id,)).fetchone()
-    conn.close()
-    if not row: raise HTTPException(404)
-    return {"locked": datetime.utcnow() < datetime.fromisoformat(row[0]), "unlock_at": row[0]}
+    if id not in capsules:
+        raise HTTPException(404, "Capsule not found")
+    cap = capsules[id]
+    unlock = datetime.fromisoformat(cap["unlock_at"])
+    return {"locked": datetime.utcnow() < unlock, "unlock_at": cap["unlock_at"]}
