@@ -1,8 +1,6 @@
-"""Time Capsule API"""
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
 from datetime import datetime
 import secrets
 
@@ -10,10 +8,6 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 capsules = {}
-
-class Capsule(BaseModel):
-    content: str
-    unlock_at: datetime
 
 HTML = '''<!DOCTYPE html>
 <html lang="en">
@@ -34,10 +28,9 @@ HTML = '''<!DOCTYPE html>
     .card h2{font-size:16px;margin-bottom:16px}
     label{display:block;font-size:12px;color:var(--dim);margin-bottom:6px}
     textarea,input{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text);font-size:14px;margin-bottom:16px;resize:none}
-    textarea:focus,input:focus{outline:none;border-color:var(--accent)}
     button{width:100%;padding:14px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer}
     button:disabled{opacity:0.5}
-    .result{background:rgba(230,57,70,.1);border:1px solid rgba(230,57,70,.3);border-radius:10px;padding:16px;font-size:13px;word-break:break-all;margin-top:16px}
+    .result{background:rgba(230,57,70,.1);border:1px solid rgba(230,57,70,.3);border-radius:10px;padding:16px;font-size:13px;margin-top:16px}
     .msg{padding:16px;border-radius:10px;font-size:14px;margin-top:16px}
     .msg.locked{background:rgba(230,57,70,.1);color:var(--accent)}
     .msg.unlocked{background:rgba(34,197,94,.1);color:#22c55e}
@@ -110,20 +103,36 @@ def home():
     return HTML
 
 @app.post("/capsules")
-def create_capsule(c: Capsule):
-    if c.unlock_at <= datetime.utcnow():
+def create_capsule(content: str = None, unlock_at: str = None):
+    from fastapi import Request
+    # Manual JSON parsing to avoid Pydantic issues
+    return {"error": "use body"}
+
+@app.api_route("/capsules", methods=["POST"])
+async def create_capsule_post(request):
+    body = await request.json()
+    content = body.get("content")
+    unlock_at = body.get("unlock_at")
+    
+    if not content or not unlock_at:
+        raise HTTPException(400, "Missing fields")
+    
+    unlock = datetime.fromisoformat(unlock_at.replace("Z", "+00:00"))
+    if unlock <= datetime.now(unlock.tzinfo):
         raise HTTPException(400, "Date must be in the future")
+    
     id = secrets.token_urlsafe(8)
-    capsules[id] = {"content": c.content, "unlock_at": c.unlock_at.isoformat()}
-    return {"id": id, "unlocks_at": c.unlock_at}
+    capsules[id] = {"content": content, "unlock_at": unlock_at}
+    return {"id": id, "unlocks_at": unlock_at}
 
 @app.get("/capsules/{id}")
 def get_capsule(id: str):
     if id not in capsules:
         raise HTTPException(404)
     cap = capsules[id]
-    unlock = datetime.fromisoformat(cap["unlock_at"])
-    if datetime.utcnow() < unlock:
-        d = unlock - datetime.utcnow()
+    unlock = datetime.fromisoformat(cap["unlock_at"].replace("Z", "+00:00"))
+    now = datetime.now(unlock.tzinfo)
+    if now < unlock:
+        d = unlock - now
         raise HTTPException(403, f"🔒 {d.days}d {d.seconds//3600}h remaining")
     return {"content": cap["content"]}
