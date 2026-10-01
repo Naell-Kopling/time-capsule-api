@@ -75,26 +75,21 @@ HTML = '''<!DOCTYPE html>
   </div>
   <p class="footer">by <a href="https://naell-portofolio.vercel.app">Leonardo</a> · <a href="https://github.com/Naell-Kopling/time-capsule-api">GitHub</a></p>
   <script>
-    // Get timezone name from browser
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const tzShort = new Date().toLocaleTimeString('en-US', {timeZoneName:'short'}).split(' ').pop();
     document.getElementById('tz-label').textContent = 'Timezone: ' + tzShort + ' (' + tz + ')';
     
     function formatDate(iso) {
-      return new Date(iso).toLocaleString('id-ID', {
-        dateStyle: 'full',
-        timeStyle: 'short',
-        timeZone: tz
-      }) + ' ' + tzShort;
+      return new Date(iso).toLocaleString('id-ID') + ' ' + tzShort;
     }
     
-    async function create(){
+    async function create() {
       const content = document.getElementById('content').value;
       const unlock = document.getElementById('unlock').value;
       const btn = document.getElementById('lockBtn');
       const result = document.getElementById('create-result');
       
-      if(!content || !unlock) {
+      if (!content || !unlock) {
         result.innerHTML = '<div class="msg error">⚠️ Fill message and date</div>';
         return;
       }
@@ -103,31 +98,32 @@ HTML = '''<!DOCTYPE html>
       btn.textContent = 'Creating...';
       
       try {
+        const unlockDate = new Date(unlock);
         const res = await fetch('/capsules', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({content, unlock_at: (unlock.includes("T") ? new Date(unlock) : new Date(unlock.replace(" ", "T"))).toISOString()(' ', 'T')).toISOString()})
+          body: JSON.stringify({content: content, unlock_at: unlockDate.toISOString()})
         });
         const data = await res.json();
         
-        if(res.ok) {
+        if (res.ok) {
           result.innerHTML = '<div class="result">✅ Capsule Created!<br><br><b>ID:</b> ' + data.id + '<br><b>Unlocks:</b> ' + formatDate(data.unlocks_at) + '</div>';
           document.getElementById('content').value = '';
         } else {
           result.innerHTML = '<div class="msg error">❌ ' + (data.detail || 'Error') + '</div>';
         }
       } catch(e) {
-        result.innerHTML = '<div class="msg error">❌ Network error: ' + e.message + '</div>';
+        result.innerHTML = '<div class="msg error">❌ Error: ' + e.message + '</div>';
       }
       
       btn.disabled = false;
       btn.textContent = 'Lock It 🔒';
     }
     
-    async function openCapsule(){
+    async function openCapsule() {
       const id = document.getElementById('capsule-id').value.trim();
       const result = document.getElementById('open-result');
-      if(!id) {
+      if (!id) {
         result.innerHTML = '<div class="msg error">⚠️ Enter capsule ID</div>';
         return;
       }
@@ -136,9 +132,9 @@ HTML = '''<!DOCTYPE html>
         const res = await fetch('/capsules/' + id);
         const data = await res.json();
         
-        if(res.status === 403) {
+        if (res.status === 403) {
           result.innerHTML = '<div class="msg locked">' + data.detail + '</div>';
-        } else if(res.ok) {
+        } else if (res.ok) {
           result.innerHTML = '<div class="msg unlocked">🎉 <b>Message:</b><br><br>' + data.content + '</div>';
         } else {
           result.innerHTML = '<div class="msg error">❌ Capsule not found</div>';
@@ -148,7 +144,6 @@ HTML = '''<!DOCTYPE html>
       }
     }
     
-    // Set default to tomorrow
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     document.getElementById('unlock').value = tomorrow.toISOString().slice(0,16);
