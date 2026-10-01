@@ -1,1 +1,12 @@
-{"builds":[{"src":"main.py","use":"@vercel/python"}],"routes":[{"src":"/(.*)", "dest":"main.py"}]}
+{
+  "builds": [
+    {"src": "main.py", "use": "@vercel/python"},
+    {"src": "web/**", "use": "@vercel/static"}
+  ],
+  "routes": [
+    {"src": "/capsules(.*)", "dest": "main.py"},
+    {"src": "/docs", "dest": "main.py"},
+    {"src": "/openapi.json", "dest": "main.py"},
+    {"src": "/(.*)", "dest": "web/$1"}
+  ]
+}
