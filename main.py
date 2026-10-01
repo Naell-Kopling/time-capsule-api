@@ -73,6 +73,17 @@ HTML = '''<!DOCTYPE html>
   </div>
   <p class="footer">by <a href="https://naell-portofolio.vercel.app">Leonardo</a> · <a href="https://github.com/Naell-Kopling/time-capsule-api">GitHub</a></p>
   <script>
+    function formatDate(iso) {
+      const d = new Date(iso);
+      const offset = d.getTimezoneOffset();
+      let tz = "UTC";
+      if(offset === -420) tz = "WIB";
+      else if(offset === -480) tz = "WITA";
+      else if(offset === -540) tz = "WIT";
+      else if(offset !== 0) tz = "GMT" + (offset > 0 ? "-" : "+") + Math.abs(offset/60);
+      return d.toLocaleString("id-ID") + " " + tz;
+    }
+
     async function create(){
       const content = document.getElementById('content').value;
       const unlock = document.getElementById('unlock').value;
@@ -97,7 +108,7 @@ HTML = '''<!DOCTYPE html>
         const data = await res.json();
         
         if(res.ok) {
-          result.innerHTML = '<div class="result">✅ Capsule Created!<br><br><b>ID:</b> ' + data.id + '<br><b>Unlocks:</b> ' + new Date(data.unlocks_at).toLocaleString() + '</div>';
+          result.innerHTML = '<div class="result">✅ Capsule Created!<br><br><b>ID:</b> ' + data.id + '<br><b>Unlocks:</b> ' + formatDate(data.unlocks_at) + '</div>';
           document.getElementById('content').value = '';
         } else {
           result.innerHTML = '<div class="msg error">❌ ' + (data.detail || 'Error') + '</div>';
