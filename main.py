@@ -1,10 +1,18 @@
 """Time Capsule API"""
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime
 import sqlite3, secrets, os
 
 app = FastAPI(title="Time Capsule API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 DB = "/tmp/capsules.db" if os.getenv("VERCEL") else "capsules.db"
 
