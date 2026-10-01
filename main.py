@@ -106,7 +106,7 @@ HTML = '''<!DOCTYPE html>
         const res = await fetch('/capsules', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({content, unlock_at: new Date(unlock).toISOString()})
+          body: JSON.stringify({content, unlock_at: (unlock.includes("T") ? new Date(unlock) : new Date(unlock.replace(" ", "T"))).toISOString()(' ', 'T')).toISOString()})
         });
         const data = await res.json();
         
