@@ -7,7 +7,6 @@ from datetime import datetime
 import sqlite3, secrets, os
 
 app = FastAPI(title="Time Capsule API")
-
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 DB = "/tmp/capsules.db" if os.getenv("VERCEL") else "capsules.db"
@@ -43,11 +42,12 @@ HTML = '''<!DOCTYPE html>
     textarea:focus,input:focus{outline:none;border-color:var(--accent)}
     button{width:100%;padding:14px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;transition:transform .2s}
     button:hover{transform:translateY(-2px)}
+    button:disabled{opacity:0.5;cursor:not-allowed}
     .result{background:rgba(230,57,70,.1);border:1px solid rgba(230,57,70,.3);border-radius:10px;padding:16px;font-size:13px;word-break:break-all;margin-top:16px}
-    .result a{color:var(--accent)}
     .msg{padding:16px;border-radius:10px;font-size:14px;margin-top:16px}
     .msg.locked{background:rgba(230,57,70,.1);color:var(--accent)}
     .msg.unlocked{background:rgba(34,197,94,.1);color:#22c55e}
+    .msg.error{background:rgba(230,57,70,.1);color:var(--accent)}
     .footer{margin-top:auto;padding-top:40px;font-size:12px;color:var(--dim)}
     .footer a{color:var(--accent);text-decoration:none}
   </style>
@@ -60,9 +60,9 @@ HTML = '''<!DOCTYPE html>
     <h2>📦 Create Capsule</h2>
     <label>Message</label>
     <textarea id="content" rows="3" placeholder="Dear future me..."></textarea>
-    <label>Unlock Date</label>
+    <label>Unlock Date & Time</label>
     <input type="datetime-local" id="unlock">
-    <button onclick="create()">Lock It 🔒</button>
+    <button id="lockBtn" onclick="create()">Lock It 🔒</button>
     <div id="create-result"></div>
   </div>
   <div class="card">
@@ -74,22 +74,71 @@ HTML = '''<!DOCTYPE html>
   <p class="footer">by <a href="https://naell-portofolio.vercel.app">Leonardo</a> · <a href="https://github.com/Naell-Kopling/time-capsule-api">GitHub</a></p>
   <script>
     async function create(){
-      const content=document.getElementById('content').value;
-      const unlock=document.getElementById('unlock').value;
-      if(!content||!unlock)return alert('Fill all fields');
-      const res=await fetch('/capsules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content,unlock_at:new Date(unlock).toISOString()})});
-      const data=await res.json();
-      if(res.ok){document.getElementById('create-result').innerHTML='<div class="result">✅ Created!<br><b>ID:</b> '+data.id+'<br><b>Unlocks:</b> '+new Date(data.unlocks_at).toLocaleString()+'</div>';document.getElementById('content').value='';}
-      else alert(data.detail||'Error');
+      const content = document.getElementById('content').value;
+      const unlock = document.getElementById('unlock').value;
+      const btn = document.getElementById('lockBtn');
+      const result = document.getElementById('create-result');
+      
+      if(!content || !unlock) {
+        result.innerHTML = '<div class="msg error">⚠️ Fill message and date</div>';
+        return;
+      }
+      
+      btn.disabled = true;
+      btn.textContent = 'Creating...';
+      
+      try {
+        const unlockDate = new Date(unlock);
+        const res = await fetch('/capsules', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({content, unlock_at: unlockDate.toISOString()})
+        });
+        const data = await res.json();
+        
+        if(res.ok) {
+          result.innerHTML = '<div class="result">✅ Capsule Created!<br><br><b>ID:</b> ' + data.id + '<br><b>Unlocks:</b> ' + new Date(data.unlocks_at).toLocaleString() + '</div>';
+          document.getElementById('content').value = '';
+        } else {
+          result.innerHTML = '<div class="msg error">❌ ' + (data.detail || 'Error') + '</div>';
+        }
+      } catch(e) {
+        result.innerHTML = '<div class="msg error">❌ Network error: ' + e.message + '</div>';
+      }
+      
+      btn.disabled = false;
+      btn.textContent = 'Lock It 🔒';
     }
+    
     async function openCapsule(){
-      const id=document.getElementById('capsule-id').value.trim();if(!id)return;
-      const res=await fetch('/capsules/'+id);const data=await res.json();
-      if(res.status===403)document.getElementById('open-result').innerHTML='<div class="msg locked">'+data.detail+'</div>';
-      else if(res.ok)document.getElementById('open-result').innerHTML='<div class="msg unlocked">🎉 '+data.content+'</div>';
-      else document.getElementById('open-result').innerHTML='<div class="msg locked">❌ Not found</div>';
+      const id = document.getElementById('capsule-id').value.trim();
+      const result = document.getElementById('open-result');
+      if(!id) {
+        result.innerHTML = '<div class="msg error">⚠️ Enter capsule ID</div>';
+        return;
+      }
+      
+      try {
+        const res = await fetch('/capsules/' + id);
+        const data = await res.json();
+        
+        if(res.status === 403) {
+          result.innerHTML = '<div class="msg locked">' + data.detail + '</div>';
+        } else if(res.ok) {
+          result.innerHTML = '<div class="msg unlocked">🎉 <b>Message:</b><br><br>' + data.content + '</div>';
+        } else {
+          result.innerHTML = '<div class="msg error">❌ Capsule not found</div>';
+        }
+      } catch(e) {
+        result.innerHTML = '<div class="msg error">❌ Network error</div>';
+      }
     }
-    document.getElementById('unlock').min=new Date().toISOString().slice(0,16);
+    
+    // Set default to tomorrow
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    document.getElementById('unlock').value = tomorrow.toISOString().slice(0,16);
+    document.getElementById('unlock').min = new Date().toISOString().slice(0,16);
   </script>
 </body>
 </html>'''
@@ -101,7 +150,7 @@ def home():
 @app.post("/capsules")
 def create(c: Capsule):
     if c.unlock_at <= datetime.utcnow():
-        raise HTTPException(400, "unlock_at must be future")
+        raise HTTPException(400, "Date must be in the future")
     id = secrets.token_urlsafe(8)
     with db() as conn:
         conn.execute("INSERT INTO capsules VALUES (?,?,?)", (id, c.content, c.unlock_at.isoformat()))
