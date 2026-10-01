@@ -48,6 +48,7 @@ HTML = '''<!DOCTYPE html>
     .msg.locked{background:rgba(230,57,70,.1);color:var(--accent)}
     .msg.unlocked{background:rgba(34,197,94,.1);color:#22c55e}
     .msg.error{background:rgba(230,57,70,.1);color:var(--accent)}
+    .tz{font-size:11px;color:var(--dim);margin-top:-12px;margin-bottom:16px}
     .footer{margin-top:auto;padding-top:40px;font-size:12px;color:var(--dim)}
     .footer a{color:var(--accent);text-decoration:none}
   </style>
@@ -62,6 +63,7 @@ HTML = '''<!DOCTYPE html>
     <textarea id="content" rows="3" placeholder="Dear future me..."></textarea>
     <label>Unlock Date & Time</label>
     <input type="datetime-local" id="unlock">
+    <p class="tz" id="tz-label"></p>
     <button id="lockBtn" onclick="create()">Lock It 🔒</button>
     <div id="create-result"></div>
   </div>
@@ -73,17 +75,19 @@ HTML = '''<!DOCTYPE html>
   </div>
   <p class="footer">by <a href="https://naell-portofolio.vercel.app">Leonardo</a> · <a href="https://github.com/Naell-Kopling/time-capsule-api">GitHub</a></p>
   <script>
+    // Get timezone name from browser
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const tzShort = new Date().toLocaleTimeString('en-US', {timeZoneName:'short'}).split(' ').pop();
+    document.getElementById('tz-label').textContent = 'Timezone: ' + tzShort + ' (' + tz + ')';
+    
     function formatDate(iso) {
-      const d = new Date(iso);
-      const offset = d.getTimezoneOffset();
-      let tz = "UTC";
-      if(offset === -420) tz = "WIB";
-      else if(offset === -480) tz = "WITA";
-      else if(offset === -540) tz = "WIT";
-      else if(offset !== 0) tz = "GMT" + (offset > 0 ? "-" : "+") + Math.abs(offset/60);
-      return d.toLocaleString("id-ID") + " " + tz;
+      return new Date(iso).toLocaleString('id-ID', {
+        dateStyle: 'full',
+        timeStyle: 'short',
+        timeZone: tz
+      }) + ' ' + tzShort;
     }
-
+    
     async function create(){
       const content = document.getElementById('content').value;
       const unlock = document.getElementById('unlock').value;
@@ -99,11 +103,10 @@ HTML = '''<!DOCTYPE html>
       btn.textContent = 'Creating...';
       
       try {
-        const unlockDate = new Date(unlock);
         const res = await fetch('/capsules', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({content, unlock_at: unlockDate.toISOString()})
+          body: JSON.stringify({content, unlock_at: new Date(unlock).toISOString()})
         });
         const data = await res.json();
         
