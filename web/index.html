@@ -23,8 +23,7 @@
     button:hover { transform:translateY(-2px); }
     .result { background:rgba(230,57,70,.1); border:1px solid rgba(230,57,70,.3); border-radius:10px; padding:16px; font-size:13px; word-break:break-all; }
     .result a { color:var(--accent); }
-    #open-card input { margin-bottom:8px; }
-    .msg { padding:16px; border-radius:10px; font-size:14px; }
+    .msg { padding:16px; border-radius:10px; font-size:14px; margin-top:16px; }
     .msg.locked { background:rgba(230,57,70,.1); color:var(--accent); }
     .msg.unlocked { background:rgba(34,197,94,.1); color:#22c55e; }
     .footer { margin-top:auto; padding-top:40px; font-size:12px; color:var(--dim); }
@@ -46,61 +45,61 @@
     <div id="create-result"></div>
   </div>
 
-  <div class="card" id="open-card">
+  <div class="card">
     <h2>🔓 Open Capsule</h2>
     <input type="text" id="capsule-id" placeholder="Capsule ID">
-    <button onclick="open_capsule()">Open</button>
+    <button onclick="openCapsule()">Open</button>
     <div id="open-result"></div>
   </div>
 
   <p class="footer">by <a href="https://naell-portofolio.vercel.app">Leonardo</a> · <a href="https://github.com/Naell-Kopling/time-capsule-api">GitHub</a></p>
 
   <script>
-    const API = window.location.origin;
+    const API = location.origin;
     
     async function create() {
       const content = document.getElementById('content').value;
       const unlock = document.getElementById('unlock').value;
       if (!content || !unlock) return alert('Fill all fields');
       
-      const res = await fetch(`${API}/capsules`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({content, unlock_at: new Date(unlock).toISOString()})
-      });
-      const data = await res.json();
-      
-      if (res.ok) {
-        document.getElementById('create-result').innerHTML = `
-          <div class="result" style="margin-top:16px">
-            ✅ Capsule created!<br><br>
-            <strong>ID:</strong> ${data.id}<br>
-            <strong>Link:</strong> <a href="${API}/capsules/${data.id}">${API}/capsules/${data.id}</a><br>
-            <strong>Unlocks:</strong> ${new Date(data.unlocks_at).toLocaleString()}
-          </div>`;
-        document.getElementById('content').value = '';
-      } else {
-        alert(data.detail || 'Error');
-      }
+      try {
+        const res = await fetch(API + '/capsules', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({content, unlock_at: new Date(unlock).toISOString()})
+        });
+        const data = await res.json();
+        
+        if (res.ok) {
+          document.getElementById('create-result').innerHTML = 
+            '<div class="result" style="margin-top:16px">✅ Capsule created!<br><br>' +
+            '<strong>ID:</strong> ' + data.id + '<br>' +
+            '<strong>Unlocks:</strong> ' + new Date(data.unlocks_at).toLocaleString() + '</div>';
+          document.getElementById('content').value = '';
+        } else {
+          alert(data.detail || 'Error');
+        }
+      } catch(e) { alert('Network error'); }
     }
 
-    async function open_capsule() {
+    async function openCapsule() {
       const id = document.getElementById('capsule-id').value.trim();
       if (!id) return;
       
-      const res = await fetch(`${API}/capsules/${id}`);
-      const data = await res.json();
-      
-      if (res.status === 403) {
-        document.getElementById('open-result').innerHTML = `<div class="msg locked" style="margin-top:16px">${data.detail}</div>`;
-      } else if (res.ok) {
-        document.getElementById('open-result').innerHTML = `<div class="msg unlocked" style="margin-top:16px">🎉 <strong>Message:</strong><br><br>${data.content}</div>`;
-      } else {
-        document.getElementById('open-result').innerHTML = `<div class="msg locked" style="margin-top:16px">❌ Not found</div>`;
-      }
+      try {
+        const res = await fetch(API + '/capsules/' + id);
+        const data = await res.json();
+        
+        if (res.status === 403) {
+          document.getElementById('open-result').innerHTML = '<div class="msg locked">' + data.detail + '</div>';
+        } else if (res.ok) {
+          document.getElementById('open-result').innerHTML = '<div class="msg unlocked">🎉 <strong>Message:</strong><br><br>' + data.content + '</div>';
+        } else {
+          document.getElementById('open-result').innerHTML = '<div class="msg locked">❌ Not found</div>';
+        }
+      } catch(e) { alert('Network error'); }
     }
 
-    // Set min date to now
     document.getElementById('unlock').min = new Date().toISOString().slice(0,16);
   </script>
 </body>
