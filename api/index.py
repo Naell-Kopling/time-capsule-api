@@ -1,4 +1,4 @@
-"""Time Capsule API - in-memory for serverless demo"""
+"""Time Capsule API"""
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -6,10 +6,9 @@ from pydantic import BaseModel
 from datetime import datetime
 import secrets
 
-app = FastAPI(title="Time Capsule API")
+app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# ponytail: in-memory storage resets on cold start, use real DB for production
 capsules = {}
 
 class Capsule(BaseModel):
@@ -36,14 +35,12 @@ HTML = '''<!DOCTYPE html>
     label{display:block;font-size:12px;color:var(--dim);margin-bottom:6px}
     textarea,input{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text);font-size:14px;margin-bottom:16px;resize:none}
     textarea:focus,input:focus{outline:none;border-color:var(--accent)}
-    button{width:100%;padding:14px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;transition:transform .2s}
-    button:hover{transform:translateY(-2px)}
+    button{width:100%;padding:14px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer}
     button:disabled{opacity:0.5}
     .result{background:rgba(230,57,70,.1);border:1px solid rgba(230,57,70,.3);border-radius:10px;padding:16px;font-size:13px;word-break:break-all;margin-top:16px}
     .msg{padding:16px;border-radius:10px;font-size:14px;margin-top:16px}
     .msg.locked{background:rgba(230,57,70,.1);color:var(--accent)}
     .msg.unlocked{background:rgba(34,197,94,.1);color:#22c55e}
-    .msg.error{background:rgba(230,57,70,.1);color:var(--accent)}
     .tz{font-size:11px;color:var(--dim);margin-top:-12px;margin-bottom:16px}
     .footer{margin-top:auto;padding-top:40px;font-size:12px;color:var(--dim)}
     .footer a{color:var(--accent);text-decoration:none}
@@ -69,81 +66,41 @@ HTML = '''<!DOCTYPE html>
     <button onclick="openCapsule()">Open</button>
     <div id="open-result"></div>
   </div>
-  <p class="footer">by <a href="https://naell-portofolio.vercel.app">Leonardo</a> · <a href="https://github.com/Naell-Kopling/time-capsule-api">GitHub</a></p>
+  <p class="footer">by <a href="https://naell-portofolio.vercel.app">Leonardo</a></p>
   <script>
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const tzShort = new Date().toLocaleTimeString('en-US', {timeZoneName:'short'}).split(' ').pop();
-    document.getElementById('tz-label').textContent = 'Timezone: ' + tzShort + ' (' + tz + ')';
-    
-    function formatDate(iso) {
-      return new Date(iso).toLocaleString('id-ID') + ' ' + tzShort;
+    const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const tzShort=new Date().toLocaleTimeString('en-US',{timeZoneName:'short'}).split(' ').pop();
+    document.getElementById('tz-label').textContent='Timezone: '+tzShort+' ('+tz+')';
+    async function create(){
+      const content=document.getElementById('content').value;
+      const unlock=document.getElementById('unlock').value;
+      const btn=document.getElementById('lockBtn');
+      const result=document.getElementById('create-result');
+      if(!content||!unlock){result.innerHTML='<div class="msg">Fill all fields</div>';return;}
+      btn.disabled=true;btn.textContent='Creating...';
+      try{
+        const res=await fetch('/capsules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content,unlock_at:new Date(unlock).toISOString()})});
+        const data=await res.json();
+        if(res.ok)result.innerHTML='<div class="result">✅ Created!<br><b>ID:</b> '+data.id+'<br><b>Unlocks:</b> '+new Date(data.unlocks_at).toLocaleString('id-ID')+' '+tzShort+'</div>';
+        else result.innerHTML='<div class="msg">'+(data.detail||'Error')+'</div>';
+      }catch(e){result.innerHTML='<div class="msg">Error: '+e.message+'</div>';}
+      btn.disabled=false;btn.textContent='Lock It 🔒';
     }
-    
-    async function create() {
-      const content = document.getElementById('content').value;
-      const unlock = document.getElementById('unlock').value;
-      const btn = document.getElementById('lockBtn');
-      const result = document.getElementById('create-result');
-      
-      if (!content || !unlock) {
-        result.innerHTML = '<div class="msg error">Fill message and date</div>';
-        return;
-      }
-      
-      btn.disabled = true;
-      btn.textContent = 'Creating...';
-      
-      try {
-        const unlockDate = new Date(unlock);
-        const res = await fetch('/capsules', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({content: content, unlock_at: unlockDate.toISOString()})
-        });
-        const data = await res.json();
-        
-        if (res.ok) {
-          result.innerHTML = '<div class="result">✅ Created!<br><b>ID:</b> ' + data.id + '<br><b>Unlocks:</b> ' + formatDate(data.unlocks_at) + '</div>';
-          document.getElementById('content').value = '';
-        } else {
-          result.innerHTML = '<div class="msg error">' + (data.detail || 'Error') + '</div>';
-        }
-      } catch(e) {
-        result.innerHTML = '<div class="msg error">Error: ' + e.message + '</div>';
-      }
-      
-      btn.disabled = false;
-      btn.textContent = 'Lock It 🔒';
+    async function openCapsule(){
+      const id=document.getElementById('capsule-id').value.trim();
+      const result=document.getElementById('open-result');
+      if(!id){result.innerHTML='<div class="msg">Enter ID</div>';return;}
+      try{
+        const res=await fetch('/capsules/'+id);
+        const data=await res.json();
+        if(res.status===403)result.innerHTML='<div class="msg locked">'+data.detail+'</div>';
+        else if(res.ok)result.innerHTML='<div class="msg unlocked">🎉 '+data.content+'</div>';
+        else result.innerHTML='<div class="msg">Not found</div>';
+      }catch(e){result.innerHTML='<div class="msg">Network error</div>';}
     }
-    
-    async function openCapsule() {
-      const id = document.getElementById('capsule-id').value.trim();
-      const result = document.getElementById('open-result');
-      if (!id) {
-        result.innerHTML = '<div class="msg error">Enter capsule ID</div>';
-        return;
-      }
-      
-      try {
-        const res = await fetch('/capsules/' + id);
-        const data = await res.json();
-        
-        if (res.status === 403) {
-          result.innerHTML = '<div class="msg locked">' + data.detail + '</div>';
-        } else if (res.ok) {
-          result.innerHTML = '<div class="msg unlocked">🎉 ' + data.content + '</div>';
-        } else {
-          result.innerHTML = '<div class="msg error">Not found</div>';
-        }
-      } catch(e) {
-        result.innerHTML = '<div class="msg error">Network error</div>';
-      }
-    }
-    
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    document.getElementById('unlock').value = tomorrow.toISOString().slice(0,16);
-    document.getElementById('unlock').min = new Date().toISOString().slice(0,16);
+    const t=new Date();t.setDate(t.getDate()+1);
+    document.getElementById('unlock').value=t.toISOString().slice(0,16);
+    document.getElementById('unlock').min=new Date().toISOString().slice(0,16);
   </script>
 </body>
 </html>'''
@@ -163,18 +120,10 @@ def create_capsule(c: Capsule):
 @app.get("/capsules/{id}")
 def get_capsule(id: str):
     if id not in capsules:
-        raise HTTPException(404, "Capsule not found")
+        raise HTTPException(404)
     cap = capsules[id]
     unlock = datetime.fromisoformat(cap["unlock_at"])
     if datetime.utcnow() < unlock:
         d = unlock - datetime.utcnow()
-        raise HTTPException(403, f"🔒 {d.days}d {d.seconds//3600}h {(d.seconds%3600)//60}m remaining")
+        raise HTTPException(403, f"🔒 {d.days}d {d.seconds//3600}h remaining")
     return {"content": cap["content"]}
-
-@app.get("/capsules/{id}/status")
-def capsule_status(id: str):
-    if id not in capsules:
-        raise HTTPException(404, "Capsule not found")
-    cap = capsules[id]
-    unlock = datetime.fromisoformat(cap["unlock_at"])
-    return {"locked": datetime.utcnow() < unlock, "unlock_at": cap["unlock_at"]}
