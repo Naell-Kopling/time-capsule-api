@@ -9,12 +9,15 @@ import sqlite3, secrets, os
 app = FastAPI(title="Time Capsule API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-DB = "/tmp/capsules.db" if os.getenv("VERCEL") else "capsules.db"
+DB = "/tmp/capsules.db"
 
-def db():
+def init_db():
     conn = sqlite3.connect(DB)
     conn.execute("CREATE TABLE IF NOT EXISTS capsules (id TEXT PRIMARY KEY, content TEXT, unlock_at TEXT)")
-    return conn
+    conn.commit()
+    conn.close()
+
+init_db()
 
 class Capsule(BaseModel):
     content: str
@@ -157,18 +160,23 @@ def home():
     return HTML
 
 @app.post("/capsules")
-def create(c: Capsule):
+def create_capsule(c: Capsule):
+    init_db()
     if c.unlock_at <= datetime.utcnow():
         raise HTTPException(400, "Date must be in the future")
     id = secrets.token_urlsafe(8)
-    with db() as conn:
-        conn.execute("INSERT INTO capsules VALUES (?,?,?)", (id, c.content, c.unlock_at.isoformat()))
+    conn = sqlite3.connect(DB)
+    conn.execute("INSERT INTO capsules VALUES (?,?,?)", (id, c.content, c.unlock_at.isoformat()))
+    conn.commit()
+    conn.close()
     return {"id": id, "unlocks_at": c.unlock_at}
 
 @app.get("/capsules/{id}")
-def get(id: str):
-    with db() as conn:
-        row = conn.execute("SELECT content, unlock_at FROM capsules WHERE id=?", (id,)).fetchone()
+def get_capsule(id: str):
+    init_db()
+    conn = sqlite3.connect(DB)
+    row = conn.execute("SELECT content, unlock_at FROM capsules WHERE id=?", (id,)).fetchone()
+    conn.close()
     if not row: raise HTTPException(404)
     unlock = datetime.fromisoformat(row[1])
     if datetime.utcnow() < unlock:
@@ -177,8 +185,10 @@ def get(id: str):
     return {"content": row[0]}
 
 @app.get("/capsules/{id}/status")
-def status(id: str):
-    with db() as conn:
-        row = conn.execute("SELECT unlock_at FROM capsules WHERE id=?", (id,)).fetchone()
+def capsule_status(id: str):
+    init_db()
+    conn = sqlite3.connect(DB)
+    row = conn.execute("SELECT unlock_at FROM capsules WHERE id=?", (id,)).fetchone()
+    conn.close()
     if not row: raise HTTPException(404)
     return {"locked": datetime.utcnow() < datetime.fromisoformat(row[0]), "unlock_at": row[0]}
